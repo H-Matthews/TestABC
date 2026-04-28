@@ -6,12 +6,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(data_cache
     main.cpp
-    DataCache.cpp
+    cache/DataCache.cpp
     UIBridge.cpp
     ../SignalDispathcer/SignalDispatcher.cpp
 )
 
 target_include_directories(data_cache PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/cache
+    ${CMAKE_CURRENT_SOURCE_DIR}/cache/Signals
+    ${CMAKE_CURRENT_SOURCE_DIR}/cache/State
+    ${CMAKE_CURRENT_SOURCE_DIR}/Models/ModelA
+    ${CMAKE_CURRENT_SOURCE_DIR}/Models/ModelA/Signals
+    ${CMAKE_CURRENT_SOURCE_DIR}/Models/ModelB
+    ${CMAKE_CURRENT_SOURCE_DIR}/Models/ModelB/Signals
     ${CMAKE_CURRENT_SOURCE_DIR}/../SignalDispathcer
 )

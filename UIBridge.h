@@ -1,7 +1,6 @@
 #pragma once
 
 #include "DataCache.h"
-#include "Models.h"
 #include "QueryResult.h"
 #include "SignalDispatcher.h"
 

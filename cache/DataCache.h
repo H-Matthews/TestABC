@@ -1,7 +1,9 @@
 #pragma once
 
-#include "Models.h"
-#include "Signals.h"
+#include "ModelAState.h"
+#include "ModelBState.h"
+#include "ModelADeltaSignal.h"
+#include "ModelBDeltaSignal.h"
 #include "QueryResult.h"
 #include "InstanceRecord.h"
 #include "SignalDispatcher.h"
@@ -124,6 +126,7 @@ private:
     mutable std::shared_mutex modelAMutex_;
     mutable std::shared_mutex modelBMutex_;
 
+    // Stores types as the erased state type so that we can store everything in this data structure.
     std::unordered_map<std::type_index,
         std::function<void(int, std::shared_ptr<const void>)>> callbacks_;
 

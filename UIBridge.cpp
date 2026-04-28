@@ -1,5 +1,6 @@
 #include "UIBridge.h"
-#include "Signals.h"
+#include "ModelACommandSignal.h"
+#include "ModelBCommandSignal.h"
 
 #include <iostream>
 #include <string>

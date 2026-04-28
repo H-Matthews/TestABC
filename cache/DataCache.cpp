@@ -1,5 +1,4 @@
 #include "DataCache.h"
-#include "Signals.h"
 
 #include <iostream>
 #include <shared_mutex>

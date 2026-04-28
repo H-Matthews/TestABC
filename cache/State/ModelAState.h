@@ -10,12 +10,7 @@ struct ModelAState {
     float flowRate    { 0.0f };
     float voltage     { 0.0f };
 };
-
-struct ModelBState {
-    int   rpm    { 0 };
-    float torque { 0.0f };
-};
-
+    
 enum class ModelAField : uint32_t {
     Temperature = 1 << 0,
     Pressure    = 1 << 1,
@@ -29,13 +24,4 @@ static constexpr uint32_t kModelAAllFields =
     static_cast<uint32_t>(ModelAField::FlowRate)    |
     static_cast<uint32_t>(ModelAField::Voltage);
 
-enum class ModelBField : uint32_t {
-    Rpm    = 1 << 0,
-    Torque = 1 << 1,
-};
-
-static constexpr uint32_t kModelBAllFields =
-    static_cast<uint32_t>(ModelBField::Rpm)    |
-    static_cast<uint32_t>(ModelBField::Torque);
-
-} // namespace dc
+} // NAMESPACE DC
