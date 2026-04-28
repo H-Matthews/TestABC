@@ -59,6 +59,13 @@ int main() {
         std::cout << "[main] Correctly reported UnknownIndex for index 99\n";
     }
 
+    std::cout << "\n--- Dynamic add: ModelA instance 2 comes online during simulation ---\n";
+    uiBridge.addInstance<dc::ModelAState>(2);
+    dc::ModelAComponent modelA2(dispatcher, 2);
+    modelA2.broadcastDelta(
+        22.0f, 0.9f, 4.0f, 10.0f,
+        dc::kModelAAllFields);
+
     std::cout << "\n--- Command flow: UIBridge sends command to ModelA instance 0 ---\n";
     uiBridge.sendModelACommand(0, 35.0f);
 

@@ -22,6 +22,12 @@ public:
         dataCache_.reserve<TState>(count);
     }
 
+    // Dynamically register a single instance at runtime. Safe to call after simulation has started.
+    template<typename TState>
+    void addInstance(int index) {
+        dataCache_.addInstance<TState>(index);
+    }
+
     // On-demand queries — bypass the dispatcher.
     QueryResult<ModelAState> queryModelA(int index) const;
     QueryResult<ModelBState> queryModelB(int index) const;

@@ -60,6 +60,20 @@ public:
         }
     }
 
+    // Dynamically add a single InstanceRecord for TState at runtime.
+    // Safe to call after simulation has started. No-op if the index already exists.
+    template<typename TState>
+    void addInstance(int index) {
+        auto& map = recordMap<TState>();
+        auto& mtx = recordMutex<TState>();
+
+        std::unique_lock lock(mtx);
+        if (map.count(index)) return;
+        auto record = std::make_unique<InstanceRecord<TState>>();
+        record->numericIndex = index;
+        map.emplace(index, std::move(record));
+    }
+
     // Bind delta signal handlers for all model types. Stores a dispatcher pointer
     // for cleanup in the destructor. Call once at startup before signals flow.
     void registerHandlers(sd::SignalDispatcher& dispatcher);
