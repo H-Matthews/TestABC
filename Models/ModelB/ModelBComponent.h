@@ -5,6 +5,7 @@
 #include "ModelBCommandSignal.h"
 
 #include <iostream>
+#include <optional>
 #include <string>
 
 namespace dc {
@@ -24,12 +25,11 @@ public:
         dispatcher_.disconnect(alias_);
     }
 
-    void broadcastDelta(int rpm, float torque, uint32_t presentFields) {
+    void broadcastDelta(std::optional<int> rpm, std::optional<float> torque) {
         ModelBDeltaSignal signal;
-        signal.numericIndex  = index_;
-        signal.presentFields = presentFields;
-        signal.rpm           = rpm;
-        signal.torque        = torque;
+        signal.numericIndex = index_;
+        signal.rpm          = rpm;
+        signal.torque       = torque;
         dispatcher_.broadcast(alias_, signal);
     }
 

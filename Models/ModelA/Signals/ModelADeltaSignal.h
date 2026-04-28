@@ -1,14 +1,19 @@
 #pragma once
 
-#include "DeltaSignal.h"
+#include "Signal.h"
+#include <optional>
 
 namespace dc {
 
-struct ModelADeltaSignal : DeltaSignal {
-    float temperature { 0.0f };
-    float pressure    { 0.0f };
-    float flowRate    { 0.0f };
-    float voltage     { 0.0f };
+// A partial update for a ModelA instance. Only populate the fields that have
+// changed — unpopulated optionals are ignored during the merge.
+struct ModelADeltaSignal : sd::Signal {
+    int numericIndex;
+
+    std::optional<float> temperature;
+    std::optional<float> pressure;
+    std::optional<float> flowRate;
+    std::optional<float> voltage;
 };
 
-} // NAMESPACE DC
+} // namespace dc

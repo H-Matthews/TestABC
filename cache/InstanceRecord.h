@@ -12,20 +12,16 @@ struct InstanceRecord {
     int            numericIndex  { 0 };
     mutable std::mutex instanceMutex;
     TState         state         {};
-    uint32_t       seenFields    { 0 };
     bool           ready         { false };
 
-    // Acquires instanceMutex, applies field updates via applyFn, updates seenFields,
-    // sets ready once all expected fields have been seen. Returns ready status.
+    // Acquires instanceMutex, applies field updates via applyFn, then checks
+    // TState::isComplete to determine readiness. Returns ready status.
     template<typename TDeltaSignal, typename TApplyFn>
-    bool applyDelta(const TDeltaSignal& signal, uint32_t allFields, TApplyFn&& applyFn) {
+    bool applyDelta(const TDeltaSignal& signal, TApplyFn&& applyFn) {
         std::lock_guard lock(instanceMutex);
-
-        // Converts back to an RValue and calls lambda
         std::forward<TApplyFn>(applyFn)(state, signal);
-        seenFields |= signal.presentFields;
-        if (!ready && (seenFields & allFields) == allFields) {
-            ready = true;
+        if (!ready) {
+            ready = TState::isComplete(state);
         }
         return ready;
     }

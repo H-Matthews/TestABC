@@ -48,17 +48,17 @@ void UIBridge::sendModelBCommand(int index, int rpm) {
 
 void UIBridge::onModelAReady(int index, std::shared_ptr<const ModelAState> snapshot) {
     std::cout << "[UIBridge] ModelA[" << index << "] snapshot ready:"
-              << " temperature=" << snapshot->temperature
-              << " pressure="    << snapshot->pressure
-              << " flowRate="    << snapshot->flowRate
-              << " voltage="     << snapshot->voltage
+              << " temperature=" << snapshot->temperature.value()
+              << " pressure="    << snapshot->pressure.value()
+              << " flowRate="    << snapshot->flowRate.value()
+              << " voltage="     << snapshot->voltage.value()
               << "\n";
 }
 
 void UIBridge::onModelBReady(int index, std::shared_ptr<const ModelBState> snapshot) {
     std::cout << "[UIBridge] ModelB[" << index << "] snapshot ready:"
-              << " rpm="    << snapshot->rpm
-              << " torque=" << snapshot->torque
+              << " rpm="    << snapshot->rpm.value()
+              << " torque=" << snapshot->torque.value()
               << "\n";
 }
 

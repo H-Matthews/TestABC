@@ -23,34 +23,23 @@ int main() {
 
     std::cout << "--- Push flow: ModelA instance 0 ---\n";
     // Component 1 broadcasts Temperature + Pressure. Not ready yet.
-    modelA0.broadcastDelta(
-        25.0f, 1.013f, 0.0f, 0.0f,
-        static_cast<uint32_t>(dc::ModelAField::Temperature) |
-        static_cast<uint32_t>(dc::ModelAField::Pressure));
+    modelA0.broadcastDelta(25.0f, 1.013f, std::nullopt, std::nullopt);
     std::cout << "(no callback yet — FlowRate and Voltage still missing)\n";
 
     // Component 2 broadcasts FlowRate + Voltage. Now all four fields seen → callback fires.
-    modelA0.broadcastDelta(
-        0.0f, 0.0f, 5.5f, 12.0f,
-        static_cast<uint32_t>(dc::ModelAField::FlowRate) |
-        static_cast<uint32_t>(dc::ModelAField::Voltage));
+    modelA0.broadcastDelta(std::nullopt, std::nullopt, 5.5f, 12.0f);
 
     std::cout << "\n--- Push flow: ModelA instance 1 (all fields in one burst) ---\n";
-    modelA1.broadcastDelta(
-        30.0f, 1.1f, 6.0f, 11.5f,
-        dc::kModelAAllFields);
+    modelA1.broadcastDelta(30.0f, 1.1f, 6.0f, 11.5f);
 
     std::cout << "\n--- Push flow: ModelB instance 0 ---\n";
-    modelB0.broadcastDelta(
-        1500, 45.0f,
-        static_cast<uint32_t>(dc::ModelBField::Rpm) |
-        static_cast<uint32_t>(dc::ModelBField::Torque));
+    modelB0.broadcastDelta(1500, 45.0f);
 
     std::cout << "\n--- Query flow: on-demand query for ModelA instance 0 ---\n";
     auto result = uiBridge.queryModelA(0);
     if (result.status == dc::QueryResult<dc::ModelAState>::Status::Ready) {
-        std::cout << "[main] Query ready: temperature=" << result.snapshot->temperature
-                  << " pressure=" << result.snapshot->pressure << "\n";
+        std::cout << "[main] Query ready: temperature=" << result.snapshot->temperature.value()
+                  << " pressure=" << result.snapshot->pressure.value() << "\n";
     }
 
     std::cout << "\n--- Query flow: on-demand query for unknown index ---\n";
@@ -62,9 +51,7 @@ int main() {
     std::cout << "\n--- Dynamic add: ModelA instance 2 comes online during simulation ---\n";
     uiBridge.addInstance<dc::ModelAState>(2);
     dc::ModelAComponent modelA2(dispatcher, 2);
-    modelA2.broadcastDelta(
-        22.0f, 0.9f, 4.0f, 10.0f,
-        dc::kModelAAllFields);
+    modelA2.broadcastDelta(22.0f, 0.9f, 4.0f, 10.0f);
 
     std::cout << "\n--- Command flow: UIBridge sends command to ModelA instance 0 ---\n";
     uiBridge.sendModelACommand(0, 35.0f);

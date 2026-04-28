@@ -1,21 +1,18 @@
 #pragma once
 
-#include <cstdint>
+#include <optional>
 
 namespace dc {
 
 struct ModelBState {
-    int   rpm    { 0 };
-    float torque { 0.0f };
+    std::optional<int>   rpm;
+    std::optional<float> torque;
+
+    // Required fields — snapshot is published once all of these are populated.
+    // To make a field optional, simply omit it from this check.
+    static bool isComplete(const ModelBState& s) {
+        return s.rpm && s.torque;
+    }
 };
 
-enum class ModelBField : uint32_t {
-    Rpm    = 1 << 0,
-    Torque = 1 << 1,
-};
-
-static constexpr uint32_t kModelBAllFields =
-    static_cast<uint32_t>(ModelBField::Rpm)    |
-    static_cast<uint32_t>(ModelBField::Torque);
-
-} // NAMESPACE DC
+} // namespace dc

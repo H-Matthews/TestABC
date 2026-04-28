@@ -9,13 +9,30 @@
 #include "SignalDispatcher.h"
 
 #include <functional>
+#include <iostream>
 #include <memory>
 #include <shared_mutex>
+#include <tuple>
 #include <typeindex>
 #include <unordered_map>
 
 namespace dc {
 
+// ---------------------------------------------------------------------------
+// TypeStore<TState>
+//
+// Owns the per-type record map and its shared_mutex. Bundled into a single
+// struct so it can be stored as a tuple element without extra bookkeeping.
+// ---------------------------------------------------------------------------
+template<typename TState>
+struct TypeStore {
+    std::unordered_map<int, std::unique_ptr<InstanceRecord<TState>>> records;
+    mutable std::shared_mutex mutex;
+};
+
+// ---------------------------------------------------------------------------
+// DataCache
+// ---------------------------------------------------------------------------
 class DataCache {
 public:
     DataCache() = default;
@@ -48,15 +65,13 @@ public:
         }
         flag = true;
 
-        auto& map = recordMap<TState>();
-        auto& mtx = recordMutex<TState>();
-
-        std::unique_lock lock(mtx);
-        map.reserve(static_cast<std::size_t>(instanceCount));
+        auto& store = storeFor<TState>();
+        std::unique_lock lock(store.mutex);
+        store.records.reserve(static_cast<std::size_t>(instanceCount));
         for (int i = 0; i < instanceCount; ++i) {
             auto record = std::make_unique<InstanceRecord<TState>>();
             record->numericIndex = i;
-            map.emplace(i, std::move(record));
+            store.records.emplace(i, std::move(record));
         }
     }
 
@@ -64,14 +79,12 @@ public:
     // Safe to call after simulation has started. No-op if the index already exists.
     template<typename TState>
     void addInstance(int index) {
-        auto& map = recordMap<TState>();
-        auto& mtx = recordMutex<TState>();
-
-        std::unique_lock lock(mtx);
-        if (map.count(index)) return;
+        auto& store = storeFor<TState>();
+        std::unique_lock lock(store.mutex);
+        if (store.records.count(index)) return;
         auto record = std::make_unique<InstanceRecord<TState>>();
         record->numericIndex = index;
-        map.emplace(index, std::move(record));
+        store.records.emplace(index, std::move(record));
     }
 
     // Bind delta signal handlers for all model types. Stores a dispatcher pointer
@@ -81,12 +94,12 @@ public:
     // Direct query path — bypasses the SignalDispatcher entirely.
     template<typename TState>
     QueryResult<TState> query(int numericIndex) const {
+        const auto& store = storeFor<TState>();
         const InstanceRecord<TState>* record = nullptr;
         {
-            std::shared_lock lock(recordMutex<TState>());
-            const auto& map = recordMap<TState>();
-            auto it = map.find(numericIndex);
-            if (it == map.end()) {
+            std::shared_lock lock(store.mutex);
+            auto it = store.records.find(numericIndex);
+            if (it == store.records.end()) {
                 std::cerr << "[DataCache] Warning: query() unknown index " << numericIndex
                           << " for " << typeid(TState).name() << "\n";
                 return { QueryResult<TState>::Status::UnknownIndex, nullptr };
@@ -102,9 +115,31 @@ public:
     }
 
 private:
-    // Delta signal handlers — defined in DataCache.cpp.
-    void onModelADelta(const ModelADeltaSignal& signal);
-    void onModelBDelta(const ModelBDeltaSignal& signal);
+    // Single generic delta handler — shared by all model types.
+    // TState: the state type being assembled.
+    // TDelta: the delta signal type carrying the field values.
+    // TApplyFn: a callable (TState&, const TDelta&) -> void that merges populated
+    //           optional fields from the delta into the working state.
+    template<typename TState, typename TDelta, typename TApplyFn>
+    void onDelta(const TDelta& signal, TApplyFn&& applyFn) {
+        auto& store = storeFor<TState>();
+        InstanceRecord<TState>* record = nullptr;
+        {
+            std::shared_lock lock(store.mutex);
+            auto it = store.records.find(signal.numericIndex);
+            if (it == store.records.end()) {
+                std::cerr << "[DataCache] Warning: " << typeid(TState).name()
+                          << " delta for unknown index " << signal.numericIndex << "\n";
+                return;
+            }
+            record = it->second.get();
+        }
+
+        bool ready = record->applyDelta(signal, std::forward<TApplyFn>(applyFn));
+        if (ready) {
+            publish<TState>(signal.numericIndex, record->snapshot());
+        }
+    }
 
     // Invoke the registered callback for TState with the given snapshot.
     template<typename TState>
@@ -115,32 +150,34 @@ private:
         }
     }
 
-    // Route to the correct per-type record map using if constexpr (C++17).
+    // Delta signal handlers — registered with the dispatcher as member function pointers.
+    void onModelADelta(const ModelADeltaSignal& signal);
+    void onModelBDelta(const ModelBDeltaSignal& signal);
+
+    // Per-type merge functions — write populated delta fields into the working state.
+    // Declared static as they require no access to DataCache members.
+    static void mergeModelA(ModelAState& state, const ModelADeltaSignal& delta);
+    static void mergeModelB(ModelBState& state, const ModelBDeltaSignal& delta);
+
+    // Typed accessor into the tuple — returns the TypeStore for TState.
     template<typename TState>
-    auto& recordMap() {
-        if constexpr (std::is_same_v<TState, ModelAState>) return modelARecords_;
-        else                                                return modelBRecords_;
+    TypeStore<TState>& storeFor() {
+        return std::get<TypeStore<TState>>(stores_);
     }
 
     template<typename TState>
-    const auto& recordMap() const {
-        if constexpr (std::is_same_v<TState, ModelAState>) return modelARecords_;
-        else                                                return modelBRecords_;
+    const TypeStore<TState>& storeFor() const {
+        return std::get<TypeStore<TState>>(stores_);
     }
 
-    template<typename TState>
-    std::shared_mutex& recordMutex() const {
-        if constexpr (std::is_same_v<TState, ModelAState>) return modelAMutex_;
-        else                                                return modelBMutex_;
-    }
+    // One TypeStore per supported state type. Adding a new type means adding it
+    // here and binding its handler in registerHandlers() — no other changes needed.
+    std::tuple<
+        TypeStore<ModelAState>,
+        TypeStore<ModelBState>
+    > stores_;
 
-    std::unordered_map<int, std::unique_ptr<InstanceRecord<ModelAState>>> modelARecords_;
-    std::unordered_map<int, std::unique_ptr<InstanceRecord<ModelBState>>> modelBRecords_;
-
-    mutable std::shared_mutex modelAMutex_;
-    mutable std::shared_mutex modelBMutex_;
-
-    // Stores types as the erased state type so that we can store everything in this data structure.
+    // Type-erased callbacks, keyed by state type.
     std::unordered_map<std::type_index,
         std::function<void(int, std::shared_ptr<const void>)>> callbacks_;
 

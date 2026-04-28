@@ -5,6 +5,7 @@
 #include "ModelACommandSignal.h"
 
 #include <iostream>
+#include <optional>
 #include <string>
 
 namespace dc {
@@ -25,17 +26,17 @@ public:
         dispatcher_.disconnect(alias_);
     }
 
-    void broadcastDelta(float temperature, float pressure,
-                        float flowRate,    float voltage,
-                        uint32_t presentFields)
+    void broadcastDelta(std::optional<float> temperature,
+                        std::optional<float> pressure,
+                        std::optional<float> flowRate,
+                        std::optional<float> voltage)
     {
         ModelADeltaSignal signal;
-        signal.numericIndex  = index_;
-        signal.presentFields = presentFields;
-        signal.temperature   = temperature;
-        signal.pressure      = pressure;
-        signal.flowRate      = flowRate;
-        signal.voltage       = voltage;
+        signal.numericIndex = index_;
+        signal.temperature  = temperature;
+        signal.pressure     = pressure;
+        signal.flowRate     = flowRate;
+        signal.voltage      = voltage;
         dispatcher_.broadcast(alias_, signal);
     }
 
