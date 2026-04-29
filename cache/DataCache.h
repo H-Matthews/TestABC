@@ -2,8 +2,22 @@
 
 #include "ModelAState.h"
 #include "ModelBState.h"
+#include "ModelCState.h"
+#include "ModelDState.h"
+#include "ModelEState.h"
+#include "ModelFState.h"
+#include "ModelGState.h"
+#include "ModelHState.h"
+#include "ModelIState.h"
 #include "ModelADeltaSignal.h"
 #include "ModelBDeltaSignal.h"
+#include "ModelCDeltaSignal.h"
+#include "ModelDDeltaSignal.h"
+#include "ModelEDeltaSignal.h"
+#include "ModelFDeltaSignal.h"
+#include "ModelGDeltaSignal.h"
+#include "ModelHDeltaSignal.h"
+#include "ModelIDeltaSignal.h"
 #include "QueryResult.h"
 #include "InstanceRecord.h"
 #include "SignalDispatcher.h"
@@ -42,9 +56,9 @@ public:
     DataCache& operator=(const DataCache&) = delete;
 
     // Register a typed callback invoked when a model instance snapshot is ready.
-    // Must be called before registerHandlers().
     template<typename TState>
     void setCallback(std::function<void(int, std::shared_ptr<const TState>)> callback) {
+        std::unique_lock lock(callbacksMutex_);
         callbacks_[std::type_index(typeid(TState))] =
             [cb = std::move(callback)](int index, std::shared_ptr<const void> snap) {
                 cb(index, std::static_pointer_cast<const TState>(snap));
@@ -116,10 +130,6 @@ public:
 
 private:
     // Single generic delta handler — shared by all model types.
-    // TState: the state type being assembled.
-    // TDelta: the delta signal type carrying the field values.
-    // TApplyFn: a callable (TState&, const TDelta&) -> void that merges populated
-    //           optional fields from the delta into the working state.
     template<typename TState, typename TDelta, typename TApplyFn>
     void onDelta(const TDelta& signal, TApplyFn&& applyFn) {
         auto& store = storeFor<TState>();
@@ -144,6 +154,7 @@ private:
     // Invoke the registered callback for TState with the given snapshot.
     template<typename TState>
     void publish(int index, std::shared_ptr<const TState> snapshot) {
+        std::shared_lock lock(callbacksMutex_);
         auto it = callbacks_.find(std::type_index(typeid(TState)));
         if (it != callbacks_.end()) {
             it->second(index, std::static_pointer_cast<const void>(std::move(snapshot)));
@@ -153,11 +164,24 @@ private:
     // Delta signal handlers — registered with the dispatcher as member function pointers.
     void onModelADelta(const ModelADeltaSignal& signal);
     void onModelBDelta(const ModelBDeltaSignal& signal);
+    void onModelCDelta(const ModelCDeltaSignal& signal);
+    void onModelDDelta(const ModelDDeltaSignal& signal);
+    void onModelEDelta(const ModelEDeltaSignal& signal);
+    void onModelFDelta(const ModelFDeltaSignal& signal);
+    void onModelGDelta(const ModelGDeltaSignal& signal);
+    void onModelHDelta(const ModelHDeltaSignal& signal);
+    void onModelIDelta(const ModelIDeltaSignal& signal);
 
     // Per-type merge functions — write populated delta fields into the working state.
-    // Declared static as they require no access to DataCache members.
     static void mergeModelA(ModelAState& state, const ModelADeltaSignal& delta);
     static void mergeModelB(ModelBState& state, const ModelBDeltaSignal& delta);
+    static void mergeModelC(ModelCState& state, const ModelCDeltaSignal& delta);
+    static void mergeModelD(ModelDState& state, const ModelDDeltaSignal& delta);
+    static void mergeModelE(ModelEState& state, const ModelEDeltaSignal& delta);
+    static void mergeModelF(ModelFState& state, const ModelFDeltaSignal& delta);
+    static void mergeModelG(ModelGState& state, const ModelGDeltaSignal& delta);
+    static void mergeModelH(ModelHState& state, const ModelHDeltaSignal& delta);
+    static void mergeModelI(ModelIState& state, const ModelIDeltaSignal& delta);
 
     // Typed accessor into the tuple — returns the TypeStore for TState.
     template<typename TState>
@@ -174,12 +198,20 @@ private:
     // here and binding its handler in registerHandlers() — no other changes needed.
     std::tuple<
         TypeStore<ModelAState>,
-        TypeStore<ModelBState>
+        TypeStore<ModelBState>,
+        TypeStore<ModelCState>,
+        TypeStore<ModelDState>,
+        TypeStore<ModelEState>,
+        TypeStore<ModelFState>,
+        TypeStore<ModelGState>,
+        TypeStore<ModelHState>,
+        TypeStore<ModelIState>
     > stores_;
 
     // Type-erased callbacks, keyed by state type.
     std::unordered_map<std::type_index,
         std::function<void(int, std::shared_ptr<const void>)>> callbacks_;
+    mutable std::shared_mutex callbacksMutex_;
 
     std::unordered_map<std::type_index, bool> reserveFlags_;
 
