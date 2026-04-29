@@ -1,7 +1,8 @@
 #pragma once
 
 #include "SignalDispatcher.h"
-#include "ModelEDeltaSignal.h"
+#include "DeltaSignal.h"
+#include "ModelEState.h"
 #include "ModelECommandSignal.h"
 
 #include <iostream>
@@ -28,7 +29,7 @@ public:
                         std::optional<float> current,
                         std::optional<float> frequency)
     {
-        ModelEDeltaSignal signal;
+        DeltaSignal<ModelEState> signal;
         signal.numericIndex = index_;
         signal.voltage      = voltage;
         signal.current      = current;

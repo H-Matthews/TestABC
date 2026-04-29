@@ -1,7 +1,8 @@
 #pragma once
 
 #include "SignalDispatcher.h"
-#include "ModelADeltaSignal.h"
+#include "DeltaSignal.h"
+#include "ModelAState.h"
 #include "ModelACommandSignal.h"
 
 #include <iostream>
@@ -31,7 +32,7 @@ public:
                         std::optional<float> flowRate,
                         std::optional<float> voltage)
     {
-        ModelADeltaSignal signal;
+        DeltaSignal<ModelAState> signal;
         signal.numericIndex = index_;
         signal.temperature  = temperature;
         signal.pressure     = pressure;

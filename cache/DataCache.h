@@ -9,15 +9,7 @@
 #include "ModelGState.h"
 #include "ModelHState.h"
 #include "ModelIState.h"
-#include "ModelADeltaSignal.h"
-#include "ModelBDeltaSignal.h"
-#include "ModelCDeltaSignal.h"
-#include "ModelDDeltaSignal.h"
-#include "ModelEDeltaSignal.h"
-#include "ModelFDeltaSignal.h"
-#include "ModelGDeltaSignal.h"
-#include "ModelHDeltaSignal.h"
-#include "ModelIDeltaSignal.h"
+#include "DeltaSignal.h"
 #include "QueryResult.h"
 #include "InstanceRecord.h"
 #include "SignalDispatcher.h"
@@ -130,8 +122,8 @@ public:
 
 private:
     // Single generic delta handler — shared by all model types.
-    template<typename TState, typename TDelta, typename TApplyFn>
-    void onDelta(const TDelta& signal, TApplyFn&& applyFn) {
+    template<typename TState>
+    void onDelta(const DeltaSignal<TState>& signal) {
         auto& store = storeFor<TState>();
         InstanceRecord<TState>* record = nullptr;
         {
@@ -145,7 +137,7 @@ private:
             record = it->second.get();
         }
 
-        bool ready = record->applyDelta(signal, std::forward<TApplyFn>(applyFn));
+        bool ready = record->applyDelta(signal);
         if (ready) {
             publish<TState>(signal.numericIndex, record->snapshot());
         }
@@ -162,26 +154,15 @@ private:
     }
 
     // Delta signal handlers — registered with the dispatcher as member function pointers.
-    void onModelADelta(const ModelADeltaSignal& signal);
-    void onModelBDelta(const ModelBDeltaSignal& signal);
-    void onModelCDelta(const ModelCDeltaSignal& signal);
-    void onModelDDelta(const ModelDDeltaSignal& signal);
-    void onModelEDelta(const ModelEDeltaSignal& signal);
-    void onModelFDelta(const ModelFDeltaSignal& signal);
-    void onModelGDelta(const ModelGDeltaSignal& signal);
-    void onModelHDelta(const ModelHDeltaSignal& signal);
-    void onModelIDelta(const ModelIDeltaSignal& signal);
-
-    // Per-type merge functions — write populated delta fields into the working state.
-    static void mergeModelA(ModelAState& state, const ModelADeltaSignal& delta);
-    static void mergeModelB(ModelBState& state, const ModelBDeltaSignal& delta);
-    static void mergeModelC(ModelCState& state, const ModelCDeltaSignal& delta);
-    static void mergeModelD(ModelDState& state, const ModelDDeltaSignal& delta);
-    static void mergeModelE(ModelEState& state, const ModelEDeltaSignal& delta);
-    static void mergeModelF(ModelFState& state, const ModelFDeltaSignal& delta);
-    static void mergeModelG(ModelGState& state, const ModelGDeltaSignal& delta);
-    static void mergeModelH(ModelHState& state, const ModelHDeltaSignal& delta);
-    static void mergeModelI(ModelIState& state, const ModelIDeltaSignal& delta);
+    void onModelADelta(const DeltaSignal<ModelAState>& signal);
+    void onModelBDelta(const DeltaSignal<ModelBState>& signal);
+    void onModelCDelta(const DeltaSignal<ModelCState>& signal);
+    void onModelDDelta(const DeltaSignal<ModelDState>& signal);
+    void onModelEDelta(const DeltaSignal<ModelEState>& signal);
+    void onModelFDelta(const DeltaSignal<ModelFState>& signal);
+    void onModelGDelta(const DeltaSignal<ModelGState>& signal);
+    void onModelHDelta(const DeltaSignal<ModelHState>& signal);
+    void onModelIDelta(const DeltaSignal<ModelIState>& signal);
 
     // Typed accessor into the tuple — returns the TypeStore for TState.
     template<typename TState>

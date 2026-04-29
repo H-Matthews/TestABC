@@ -1,8 +1,8 @@
 #pragma once
 
+#include "DeltaSignal.h"
 #include <mutex>
 #include <memory>
-#include <cstdint>
 #include <utility>
 
 namespace dc {
@@ -14,12 +14,11 @@ struct InstanceRecord {
     TState         state         {};
     bool           ready         { false };
 
-    // Acquires instanceMutex, applies field updates via applyFn, then checks
+    // Acquires instanceMutex, merges populated fields, then checks
     // TState::isComplete to determine readiness. Returns ready status.
-    template<typename TDeltaSignal, typename TApplyFn>
-    bool applyDelta(const TDeltaSignal& signal, TApplyFn&& applyFn) {
+    bool applyDelta(const DeltaSignal<TState>& signal) {
         std::lock_guard lock(instanceMutex);
-        std::forward<TApplyFn>(applyFn)(state, signal);
+        state.mergeFrom(signal);
         if (!ready) {
             ready = TState::isComplete(state);
         }

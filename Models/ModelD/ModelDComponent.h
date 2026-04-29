@@ -1,7 +1,8 @@
 #pragma once
 
 #include "SignalDispatcher.h"
-#include "ModelDDeltaSignal.h"
+#include "DeltaSignal.h"
+#include "ModelDState.h"
 #include "ModelDCommandSignal.h"
 
 #include <iostream>
@@ -28,7 +29,7 @@ public:
                         std::optional<float> voltage,
                         std::optional<int> rpm, std::optional<float> torque)
     {
-        ModelDDeltaSignal signal;
+        DeltaSignal<ModelDState> signal;
         signal.numericIndex = index_;
         signal.temperature  = temperature;
         signal.pressure     = pressure;

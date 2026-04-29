@@ -78,22 +78,23 @@ struct ModelEState : ElectricalState {
 };
 ```
 
-Every concrete state type provides a `static bool isComplete(const TState&)`. This is the sole definition of what "ready" means for that type. DataCache calls it after every delta merge — no other code needs to know the predicate.
+Every concrete state type provides two static/member operations:
+
+- `void mergeFrom(const TState& delta)` — copies each populated optional from `delta` into `this`. This is the authoritative merge logic for the type, co-located with the field definitions.
+- `static bool isComplete(const TState&)` — the sole definition of what "ready" means. DataCache calls it after every merge; no other code needs to know the predicate.
 
 ### Delta Signals
 
-Each model type has a corresponding delta signal (`Models/ModelX/Signals/ModelXDeltaSignal.h`). Delta signal fields mirror the state fields but are all `std::optional`: only the fields that changed in a given update are populated. Unpopulated fields are ignored during the merge.
+Delta signals are defined by a single generic template (`cache/Signals/DeltaSignal.h`) rather than one file per model type:
 
 ```cpp
-struct ModelADeltaSignal : sd::Signal {
-    int numericIndex;              // which instance this update is for
-
-    std::optional<float> temperature;
-    std::optional<float> pressure;
-    std::optional<float> voltage;
-    std::optional<float> flowRate;
+template<typename TState>
+struct DeltaSignal : sd::Signal, TState {
+    int numericIndex = -1;
 };
 ```
+
+`DeltaSignal<TState>` inherits all the `std::optional` fields from `TState` and adds `numericIndex` to identify the target instance. Only fields set by the emitting component carry a value; unset fields are ignored during the merge. There are no separate `ModelXDeltaSignal` files — the delta type for any model is `DeltaSignal<ModelXState>`.
 
 ### InstanceRecord\<TState\>
 
@@ -106,9 +107,9 @@ struct ModelADeltaSignal : sd::Signal {
 Two key operations:
 
 ```
-applyDelta(signal, applyFn)
+applyDelta(signal)
   → acquires instanceMutex
-  → calls applyFn(state, signal) to merge populated fields
+  → calls state.mergeFrom(signal) to merge populated fields
   → calls TState::isComplete(state); sets ready if true
   → returns ready
 
@@ -164,11 +165,11 @@ std::tuple<
 Internally, all delta processing flows through a single private template:
 
 ```cpp
-template<typename TState, typename TDelta, typename TApplyFn>
-void onDelta(const TDelta& signal, TApplyFn&& applyFn);
+template<typename TState>
+void onDelta(const DeltaSignal<TState>& signal);
 ```
 
-The non-template `onModelXDelta` methods are thin entry points that call `onDelta` with the correct type parameters. This **template firewall** pattern ensures each `onDelta` instantiation is pinned to one (TState, TDelta) pair regardless of the lambda type — keeping binary size proportional to model count rather than call-site count.
+The non-template `onModelXDelta` methods are thin entry points that call `onDelta` with the correct `TState`. This **template firewall** pattern pins each `onDelta` instantiation to one model type — keeping binary size proportional to model count. There are no per-type merge functions in DataCache; merge logic lives in `TState::mergeFrom`, called directly from `InstanceRecord::applyDelta`.
 
 ### UIBridge
 
@@ -202,14 +203,14 @@ A component emits a partial update; DataCache assembles it and fires a callback 
       → dispatcher.broadcast("model_a.0", ModelADeltaSignal{...})
 
 2. DataCache::onModelADelta(signal)
-      → onDelta<ModelAState>(signal, mergeModelA)
+      → onDelta<ModelAState>(signal)
 
 3. onDelta acquires shared_lock on TypeStore<ModelAState>::mutex
       → finds InstanceRecord* for index, releases lock
 
-4. InstanceRecord::applyDelta(signal, mergeModelA)
+4. InstanceRecord::applyDelta(signal)
       → acquires instanceMutex
-      → mergeModelA(state, signal)  [copies populated optionals into state]
+      → state.mergeFrom(signal)  [copies populated optionals into state]
       → ModelAState::isComplete(state) → false (still missing fields)
       → releases instanceMutex, returns false
 
@@ -285,18 +286,16 @@ Follow this checklist in order:
 
 1. **Base state** — if the new model introduces a field group not already covered by `PhysicsState`, `ElectricalState`, or `MechanicalState`, add a new base struct in `cache/State/Base/`.
 
-2. **State type** — create `cache/State/ModelXState.h` inheriting from the appropriate base(s). Add model-specific `std::optional` fields and implement `static bool isComplete(const ModelXState&)`.
+2. **State type** — create `cache/State/ModelXState.h` inheriting from the appropriate base(s). Add model-specific `std::optional` fields, implement `void mergeFrom(const ModelXState&)` to copy populated fields, and implement `static bool isComplete(const ModelXState&)`. No separate delta signal file is needed — `DeltaSignal<ModelXState>` is the delta type automatically.
 
-3. **Delta signal** — create `Models/ModelX/Signals/ModelXDeltaSignal.h`. Mirror the state fields as `std::optional` members; include `int numericIndex`.
+3. **Command signal** — create `Models/ModelX/Signals/ModelXCommandSignal.h` with whichever fields the UI needs to direct at this model.
 
-4. **Command signal** — create `Models/ModelX/Signals/ModelXCommandSignal.h` with whichever fields the UI needs to direct at this model.
+4. **Component** — create `Models/ModelX/ModelXComponent.h` following the existing pattern: bind the command signal in the constructor, implement `broadcastDelta` using `DeltaSignal<ModelXState>`, handle the command in `onCommand`.
 
-5. **Component** — create `Models/ModelX/ModelXComponent.h` following the existing pattern: bind the command signal in the constructor, implement `broadcastDelta`, handle the command in `onCommand`.
+5. **DataCache** (`cache/DataCache.h`) — add `TypeStore<ModelXState>` to the `stores_` tuple; declare `onModelXDelta`.
 
-6. **DataCache** (`cache/DataCache.h`) — add `TypeStore<ModelXState>` to the `stores_` tuple; declare `onModelXDelta` and `static mergeModelX`.
+6. **DataCache** (`cache/DataCache.cpp`) — implement `onModelXDelta` (one line: call `onDelta<ModelXState>`), and register the handler in `registerHandlers`.
 
-7. **DataCache** (`cache/DataCache.cpp`) — implement `mergeModelX` (copy populated optionals from delta into state), implement `onModelXDelta` (call `onDelta<ModelXState>`), and register the handler in `registerHandlers`.
+7. **UIBridge** (`UIBridge.h` / `UIBridge.cpp`) — add `setCallback<ModelXState>` in the constructor, add `sendModelXCommand`, and implement `onModelXReady`.
 
-8. **UIBridge** (`UIBridge.h` / `UIBridge.cpp`) — add `setCallback<ModelXState>` in the constructor, add `sendModelXCommand`, and implement `onModelXReady`.
-
-9. **CMakeLists.txt** — add `Models/ModelX` and `Models/ModelX/Signals` to `target_include_directories`.
+8. **CMakeLists.txt** — add `Models/ModelX` and `Models/ModelX/Signals` to `target_include_directories`.
