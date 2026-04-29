@@ -16,30 +16,22 @@ Consumers can receive data in two ways:
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    MC[ModelXComponent]
-    SD[SignalDispatcher]
-    DC[DataCache]
-    UI[UIBridge]
+```
+  (1) Push
+      [ModelXComponent] --delta signal--> [SignalDispatcher] --delta signal--> [DataCache] --callback--> [UIBridge]
 
-    MC -->|delta signal| SD
-    SD -->|delta signal| DC
-    DC -->|callback| UI
-    UI -. query .-> DC
-    UI -->|command signal| SD
-    SD -->|command signal| MC
+  (2) Query
+      [UIBridge] . . . . . . . . . . . . . . . query . . . . . . . . . . . . > [DataCache]
 
-    linkStyle 0,1,2 stroke:#3b82f6,color:#3b82f6
-    linkStyle 3 stroke:#22c55e,color:#22c55e
-    linkStyle 4,5 stroke:#f97316,color:#f97316
+  (3) Command
+      [UIBridge] --command signal--> [SignalDispatcher] --command signal--> [ModelXComponent]
 ```
 
 | | Flow |
 |---|---|
-| Blue solid | Push — component emits a delta; DataCache assembles it and fires a callback |
-| Green dotted | Query — UIBridge reads the latest snapshot on demand |
-| Orange solid | Command — UIBridge sends a directive to a specific model instance |
+| `-->` | Push — component emits a delta; DataCache assembles it and fires a callback |
+| `. . >` | Query — UIBridge reads the latest snapshot on demand (synchronous) |
+| `-->` | Command — UIBridge sends a directive to a specific model instance |
 
 The three main actors are:
 
@@ -203,79 +195,66 @@ It exposes:
 
 ### Push Flow
 
-A component emits partial updates; DataCache assembles them and fires a callback once the instance is complete.
+A component emits a partial update; DataCache assembles it and fires a callback when the instance is complete.
 
-```mermaid
-sequenceDiagram
-    participant MC as ModelXComponent
-    participant SD as SignalDispatcher
-    participant DC as DataCache
-    participant IR as InstanceRecord
-    participant UI as UIBridge
+```
+1. ModelAComponent::broadcastDelta(temp, pressure, nullopt, nullopt)
+      → dispatcher.broadcast("model_a.0", ModelADeltaSignal{...})
 
-    Note over MC,UI: First delta — partial update
-    MC->>SD: broadcast(delta, partial fields)
-    SD->>DC: onModelXDelta(signal)
-    Note over DC: shared_lock TypeStore → get InstanceRecord* → unlock
-    DC->>IR: applyDelta(signal, mergeModelX)
-    Note over IR: lock instanceMutex → merge fields → isComplete false → unlock
-    IR-->>DC: not ready
+2. DataCache::onModelADelta(signal)
+      → onDelta<ModelAState>(signal, mergeModelA)
 
-    Note over MC,UI: Second delta — completes the instance
-    MC->>SD: broadcast(delta, remaining fields)
-    SD->>DC: onModelXDelta(signal)
-    Note over DC: shared_lock TypeStore → get InstanceRecord* → unlock
-    DC->>IR: applyDelta(signal, mergeModelX)
-    Note over IR: lock instanceMutex → merge fields → isComplete true → unlock
-    IR-->>DC: ready
-    DC->>IR: snapshot()
-    Note over IR: lock instanceMutex → copy state → unlock → allocate shared_ptr
-    IR-->>DC: shared_ptr<const TState>
-    Note over DC: shared_lock callbacksMutex → invoke callback → unlock
-    DC->>UI: onModelXReady(index, snapshot)
+3. onDelta acquires shared_lock on TypeStore<ModelAState>::mutex
+      → finds InstanceRecord* for index, releases lock
+
+4. InstanceRecord::applyDelta(signal, mergeModelA)
+      → acquires instanceMutex
+      → mergeModelA(state, signal)  [copies populated optionals into state]
+      → ModelAState::isComplete(state) → false (still missing fields)
+      → releases instanceMutex, returns false
+
+5. Second delta arrives with remaining fields
+      → steps 3–4 repeat; isComplete → true; ready = true
+
+6. DataCache::publish<ModelAState>(index, snapshot)
+      → acquires shared_lock on callbacksMutex_
+      → invokes UIBridge::onModelAReady(index, snapshot)
 ```
 
 ### Query Flow
 
 A consumer reads the latest snapshot directly, bypassing the dispatcher.
 
-```mermaid
-sequenceDiagram
-    participant UI as UIBridge
-    participant DC as DataCache
-    participant IR as InstanceRecord
-
-    UI->>DC: query<ModelXState>(index)
-    Note over DC: shared_lock TypeStore → find InstanceRecord* → unlock
-    DC->>IR: trySnapshot()
-    Note over IR: lock instanceMutex → check ready flag
-
-    alt ready
-        Note over IR: copy state → unlock → allocate shared_ptr
-        IR-->>DC: {true, shared_ptr<const TState>}
-        DC-->>UI: QueryResult{ Ready, snapshot }
-    else not ready
-        Note over IR: unlock
-        IR-->>DC: {false, nullptr}
-        DC-->>UI: QueryResult{ NotReady, nullptr }
-    end
 ```
+1. uiBridge.query<ModelAState>(0)
+      → DataCache::query<ModelAState>(0)
 
-`QueryResult{ UnknownIndex, nullptr }` is returned immediately if the index is not found in the TypeStore, before `trySnapshot` is reached.
+2. Acquires shared_lock on TypeStore mutex
+      → finds InstanceRecord*, releases lock
+
+3. InstanceRecord::trySnapshot()
+      → acquires instanceMutex
+      → if !ready: return {false, nullptr}
+      → copies state, releases lock
+      → allocates shared_ptr<const ModelAState> outside lock
+
+4. Returns QueryResult{ Ready, snapshot }
+           or QueryResult{ NotReady, nullptr }
+           or QueryResult{ UnknownIndex, nullptr }
+```
 
 ### Command Flow
 
 The UI sends a directive to a specific model instance.
 
-```mermaid
-sequenceDiagram
-    participant UI as UIBridge
-    participant SD as SignalDispatcher
-    participant MC as ModelXComponent
+```
+1. uiBridge.sendModelACommand(0, 35.0f)
+      → builds ModelACommandSignal{ index=0, temperature=35.0 }
+      → dispatcher.sendTo("model_a.0", signal)
 
-    UI->>SD: sendTo("model_x.0", command signal)
-    SD->>MC: onCommand(signal)
-    Note over MC: handles command
+2. Dispatcher delivers directly to ModelAComponent instance 0
+
+3. ModelAComponent::onCommand(signal) handles it
 ```
 
 ---
