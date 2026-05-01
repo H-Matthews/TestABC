@@ -125,17 +125,19 @@ Allocation happens outside the lock to minimise contention under concurrent read
 
 ### TypeStore\<TState\>
 
-`TypeStore` (`cache/DataCache.h`) bundles the instance map and its own `std::shared_mutex` for one state type:
+`TypeStore` (`cache/DataCache.h`) bundles the instance map, its shared mutex, the ready callback, and the one-shot reserve flag for one state type:
 
 ```cpp
 template<typename TState>
 struct TypeStore {
     std::unordered_map<int, std::unique_ptr<InstanceRecord<TState>>> records;
     mutable std::shared_mutex mutex;
+    std::function<void(int, std::shared_ptr<const TState>)> callback;
+    bool reserved { false };
 };
 ```
 
-Map lookups (delta processing, queries) hold a **shared lock** — multiple threads can run concurrently. Structural changes (`reserve`, `addInstance`) hold an **exclusive lock**.
+Map lookups (delta processing, queries) hold a **shared lock** — multiple threads can run concurrently. Structural changes (`reserve`, `addInstance`) hold an **exclusive lock**. Co-locating `callback` and `reserved` in `TypeStore` eliminates the separate `callbacks_` map, `callbacksMutex_`, and `reserveFlags_` that were needed when callbacks were type-erased.
 
 ### DataCache
 
@@ -274,9 +276,9 @@ Protects the `unordered_map` of InstanceRecords for a given type. Shared lock fo
 
 Protects `state` and `ready` within a single instance. Held only for the duration of a field merge or a state copy. The `ready` flag is monotone — once set `true` it is never reset — so there is no torn read risk from checking it.
 
-**Callbacks — callbacksMutex\_ (`std::shared_mutex`)**
+**Callbacks**
 
-Protects the `callbacks_` map. `setCallback` takes an exclusive lock; `publish` takes a shared lock. This makes `setCallback` safe to call at any time, including concurrently with active delta processing.
+The ready callback lives directly in `TypeStore`, protected by the same `TypeStore::mutex` as the record map. `setCallback` takes an exclusive lock; `publish` takes a shared lock. This makes `setCallback` safe to call at any time, including concurrently with active delta processing. No deadlock risk: by the time `publish` acquires the shared lock, both the `TypeStore::mutex` shared lock from `onDelta` and the `instanceMutex` from `applyDelta` have already been released.
 
 ---
 

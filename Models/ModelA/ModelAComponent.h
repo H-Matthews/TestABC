@@ -20,7 +20,7 @@ public:
         , alias_("model_a." + std::to_string(index))
     {
         dispatcher_.bind<ModelACommandSignal>(
-            alias_, alias_, this, &ModelAComponent::onCommand);
+            alias_, alias_, [this](const ModelACommandSignal& s) { onCommand(s); });
     }
 
     ~ModelAComponent() {

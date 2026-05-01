@@ -18,7 +18,7 @@ public:
         , index_(index)
         , alias_("model_g." + std::to_string(index))
     {
-        dispatcher_.bind<ModelGCommandSignal>(alias_, alias_, this, &ModelGComponent::onCommand);
+        dispatcher_.bind<ModelGCommandSignal>(alias_, alias_, [this](const ModelGCommandSignal& s) { onCommand(s); });
     }
 
     ~ModelGComponent() {

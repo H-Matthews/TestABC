@@ -32,8 +32,11 @@ namespace dc {
 // ---------------------------------------------------------------------------
 template<typename TState>
 struct TypeStore {
+    using StateType = TState;
     std::unordered_map<int, std::unique_ptr<InstanceRecord<TState>>> records;
     mutable std::shared_mutex mutex;
+    std::function<void(int, std::shared_ptr<const TState>)> callback;
+    bool reserved { false };
 };
 
 // ---------------------------------------------------------------------------
@@ -50,11 +53,9 @@ public:
     // Register a typed callback invoked when a model instance snapshot is ready.
     template<typename TState>
     void setCallback(std::function<void(int, std::shared_ptr<const TState>)> callback) {
-        std::unique_lock lock(callbacksMutex_);
-        callbacks_[std::type_index(typeid(TState))] =
-            [cb = std::move(callback)](int index, std::shared_ptr<const void> snap) {
-                cb(index, std::static_pointer_cast<const TState>(snap));
-            };
+        auto& store = storeFor<TState>();
+        std::unique_lock lock(store.mutex);
+        store.callback = std::move(callback);
     }
 
     // Pre-allocate instanceCount InstanceRecords for TState (indices 0..instanceCount-1).
@@ -62,16 +63,14 @@ public:
     // Must be called before simulation begins.
     template<typename TState>
     void reserve(int instanceCount) {
-        auto key = std::type_index(typeid(TState));
-        auto& flag = reserveFlags_[key];
-        if (flag) {
+        auto& store = storeFor<TState>();
+        if (store.reserved) {
             std::cerr << "[DataCache] Warning: reserve() called more than once for "
                       << typeid(TState).name() << "\n";
             return;
         }
-        flag = true;
+        store.reserved = true;
 
-        auto& store = storeFor<TState>();
         std::unique_lock lock(store.mutex);
         store.records.reserve(static_cast<std::size_t>(instanceCount));
         for (int i = 0; i < instanceCount; ++i) {
@@ -146,23 +145,12 @@ private:
     // Invoke the registered callback for TState with the given snapshot.
     template<typename TState>
     void publish(int index, std::shared_ptr<const TState> snapshot) {
-        std::shared_lock lock(callbacksMutex_);
-        auto it = callbacks_.find(std::type_index(typeid(TState)));
-        if (it != callbacks_.end()) {
-            it->second(index, std::static_pointer_cast<const void>(std::move(snapshot)));
+        const auto& store = storeFor<TState>();
+        std::shared_lock lock(store.mutex);
+        if (store.callback) {
+            store.callback(index, std::move(snapshot));
         }
     }
-
-    // Delta signal handlers — registered with the dispatcher as member function pointers.
-    void onModelADelta(const DeltaSignal<ModelAState>& signal);
-    void onModelBDelta(const DeltaSignal<ModelBState>& signal);
-    void onModelCDelta(const DeltaSignal<ModelCState>& signal);
-    void onModelDDelta(const DeltaSignal<ModelDState>& signal);
-    void onModelEDelta(const DeltaSignal<ModelEState>& signal);
-    void onModelFDelta(const DeltaSignal<ModelFState>& signal);
-    void onModelGDelta(const DeltaSignal<ModelGState>& signal);
-    void onModelHDelta(const DeltaSignal<ModelHState>& signal);
-    void onModelIDelta(const DeltaSignal<ModelIState>& signal);
 
     // Typed accessor into the tuple — returns the TypeStore for TState.
     template<typename TState>
@@ -188,13 +176,6 @@ private:
         TypeStore<ModelHState>,
         TypeStore<ModelIState>
     > stores_;
-
-    // Type-erased callbacks, keyed by state type.
-    std::unordered_map<std::type_index,
-        std::function<void(int, std::shared_ptr<const void>)>> callbacks_;
-    mutable std::shared_mutex callbacksMutex_;
-
-    std::unordered_map<std::type_index, bool> reserveFlags_;
 
     sd::SignalDispatcher* dispatcher_ { nullptr };
 };

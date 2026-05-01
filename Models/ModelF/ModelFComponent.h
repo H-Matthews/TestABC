@@ -18,7 +18,7 @@ public:
         , index_(index)
         , alias_("model_f." + std::to_string(index))
     {
-        dispatcher_.bind<ModelFCommandSignal>(alias_, alias_, this, &ModelFComponent::onCommand);
+        dispatcher_.bind<ModelFCommandSignal>(alias_, alias_, [this](const ModelFCommandSignal& s) { onCommand(s); });
     }
 
     ~ModelFComponent() {
